@@ -1,0 +1,1 @@
+A work in progress transpiler from standalone WebAssembly 1.0 bytecode to MCDiamondFire code. Doesn't work currently, in development.
