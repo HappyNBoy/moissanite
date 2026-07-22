@@ -50,7 +50,7 @@ fn main() -> Result<()> {
     let bytes = fs::read(&ctx.args.input)?;
     let mut reader = BinaryReader::new(&bytes);
     parse_module(&mut reader, &mut ctx)?;
-    dbg!(ctx.memories);
+    dbg!(ctx.tables);
     // reader.consume()?;
     place_templates(ctx.out)?;
     Ok(())

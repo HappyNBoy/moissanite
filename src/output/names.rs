@@ -1,71 +1,81 @@
-use std::cell::UnsafeCell;
-use std::rc::Rc;
+use std::fmt::{Display, Formatter, Write};
+use serde::{Serialize, Serializer};
+use crate::types::Value;
 
-#[derive(Default)]
-struct SeqMap<T> {
-    data: Box<[Option<T>]>,
+// Names which do not reference other names and do not involve runtime calculations
+#[derive(Clone)]
+pub enum CName {
+    // Constants
+    ConstI,
+    ConstTmp,
+    ConstZero,
+    ConstBlank,
+    ConstInitFn,
+
+    // Value
+    Value(Value),
+    CountValue(u32),
+
+    // Variables
+    Local(u32),
+    Global(u32),
+    Stack(u32),
+    Table(u32),
+    Memory(u32, u32),
+    Function(u32),
 }
 
-impl<T> SeqMap<T> {
-    fn get(&mut self, index: usize, init: impl FnOnce() -> T) -> &mut T {
-        if index >= self.data.len() {
-            let mut vec = std::mem::take(&mut self.data).into_vec();
-            vec.reserve(index + 1 - vec.capacity());
-            vec.resize_with(vec.capacity(), || None);
-            self.data = vec.into_boxed_slice();
-        }
+// General names
+#[derive(Clone)]
+pub enum Name {
+    // CName
+    CName(CName),
 
-        let item = &mut self.data[index];
-        if item.is_none() {
-            *item = Some(init());
-        }
-        item.as_mut().unwrap()
+    // Constant Codes
+    AddIOffset(u32),
+    IndexI(CName),
+}
+
+impl From<CName> for Name {
+    fn from(value: CName) -> Self {
+        Name::CName(value)
     }
 }
 
-pub type Name = Rc<str>;
+impl Display for CName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CName::ConstI => f.write_str("_m_i"),
+            CName::ConstTmp => f.write_str("_m_tmp"),
+            CName::ConstZero => f.write_char('0'),
+            CName::ConstBlank => f.write_str("_m_blank"),
+            CName::ConstInitFn => f.write_str("_mf_init"),
 
-macro_rules! fmt_name {
-    ($name:expr, $val:expr) => {
-        Rc::from(format!("moissanite_{}_{}", $name, $val))
-    };
-}
+            CName::Value(v) => v.fmt(f),
+            CName::CountValue(x) => x.fmt(f),
 
-#[derive(Default)]
-struct NameManager {
-    functions: SeqMap<Name>,
-    tables: SeqMap<Name>,
-    memories: SeqMap<Name>,
-    globals: SeqMap<Name>,
-    locals: SeqMap<Name>,
-    stack: SeqMap<Name>,
-}
-
-thread_local! {
-    static MANAGER: UnsafeCell<NameManager> = UnsafeCell::new(NameManager::default());
-    pub static I: Name = Rc::from("i");
-    pub static TMP: Name = Rc::from("tmp");
-    pub static INIT_FN: Name = Rc::from("moissanite_init");
-    pub static BLANK_PAGE: Name = Rc::from("moissanite_blank");
-    pub static PAGE_SIZE: Name = Rc::from("8192");
-    pub static ZERO: Name = Rc::from("0");
+            CName::Local(x) => write!(f, "_ml_{x}"),
+            CName::Global(x) => write!(f, "_mg_{x}"),
+            CName::Stack(x) => write!(f, "_ms_{x}"),
+            CName::Table(x) => write!(f, "_mt_{x}"),
+            CName::Memory(x, y) => write!(f, "_mm_{x}_{y}"),
+            CName::Function(x) => write!(f, "_mf_{x}"),
+        }
+    }
 }
 
-pub fn function(i: usize) -> Name {
-    MANAGER.with(|names| unsafe { names.get().as_mut_unchecked() }.functions.get(i, || fmt_name!("function", i)).clone())
+impl Display for Name {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Name::CName(x) => x.fmt(f),
+            Name::AddIOffset(x) => write!(f, "%math(%var({})+{x})", CName::ConstI),
+            Name::IndexI(x) => write!(f, "%index({x},{})", CName::ConstI),
+        }
+    }
 }
-pub fn table(i: usize) -> Name {
-    MANAGER.with(|names| unsafe { names.get().as_mut_unchecked() }.tables.get(i, || fmt_name!("table", i)).clone())
-}
-pub fn memory(i: usize) -> Name {
-    MANAGER.with(|names| unsafe { names.get().as_mut_unchecked() }.memories.get(i, || fmt_name!("memory", i)).clone())
-}
-pub fn global(i: usize) -> Name {
-    MANAGER.with(|names| unsafe { names.get().as_mut_unchecked() }.globals.get(i, || fmt_name!("global", i)).clone())
-}
-pub fn local(i: usize) -> Name {
-    MANAGER.with(|names| unsafe { names.get().as_mut_unchecked() }.locals.get(i, || fmt_name!("local", i)).clone())
-}
-pub fn stack(i: usize) -> Name {
-    MANAGER.with(|names| unsafe { names.get().as_mut_unchecked() }.stack.get(i, || fmt_name!("stack", i)).clone())
+
+impl Serialize for Name {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
 }

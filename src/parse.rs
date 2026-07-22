@@ -64,23 +64,25 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                 .into_iter()
                 .map(|t| t.limit)
                 .collect();
-            ctx.tables.iter().enumerate().for_each(|(i, _)| {
-                ctx.out.init_global_list(names::table(i));
-            });
+            for (i, l) in ctx.tables.iter().enumerate() {
+                ctx.out.init_list(CName::Table(i as u32).into(), VarScope::Global, l.min);
+            }
         },
         Section::Memory => {
             ctx.memories = reader.read()?;
-            ctx.memories.iter().enumerate().for_each(|(i, _)| {
-                ctx.out.init_global_list(names::memory(i));
-            });
+            for (i, l) in ctx.memories.iter().enumerate() {
+                for j in 0..l.min {
+                    ctx.out.init_list(CName::Memory(i as u32, j).into(), VarScope::Global, PAGE_SIZE);
+                }
+            }
         },
         Section::Global => {
             ctx.globals = reader.read()?;
             ctx.globals.iter().enumerate()
                 .for_each(|(i, g)| {
                     ctx.out.init.push(var_block(VarAction::Set, chest_args(vec![
-                        var_item(0, names::global(i), VarScope::Global),
-                        num_item(1, Name::from(g.value.to_string())),
+                        var_item(0, CName::Global(i as u32).into(), VarScope::Global),
+                        num_item(1, CName::Value(g.value).into()),
                     ])));
                 });
         },
@@ -99,17 +101,17 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
 
                 // create a temporary elem list
                 let count = values.len();
-                ctx.out.init.create_list(names::TMP.with(Name::clone), VarScope::Line,
+                ctx.out.init.create_list(CName::ConstTmp.into(), VarScope::Line,
                                       values.map(|x| x.map(|x|
-                                          ItemData::Number { value: Name::from(Value::I32(x as i32).to_string()) })
+                                          ItemData::Number { value: CName::Value(Value::I32(x as i32)).into() })
                                       )
                 )?;
                 // copy over the numbers one by one
                 ctx.out.init.push(CodeBlock::Block(CodeBlockInner::Repeat {
                     action: RepeatAction::Multiple,
                     args: chest_args(vec![
-                        var_item(0, names::I.with(Name::clone), VarScope::Line),
-                        num_item(1, Name::from(count.to_string())),
+                        var_item(0, CName::ConstI.into(), VarScope::Line),
+                        num_item(1, CName::CountValue(count as u32).into()),
                     ]),
                 }));
                 ctx.out.init.push(CodeBlock::Bracket {
@@ -118,9 +120,9 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                 });
                 // copy the value into the table by the given offset
                 ctx.out.init.push(var_block(VarAction::SetListValue, chest_args(vec![
-                    var_item(0, names::table(table as usize), VarScope::Global),
-                    num_item(1, Name::from(format!("%math(%var(i)+{offset})"))),
-                    num_item(2, Name::from(names::TMP.with(|tmp| format!("%index({tmp},%var(i))")))),
+                    var_item(0, CName::Table(table).into(), VarScope::Global),
+                    num_item(1, Name::AddIOffset(offset)),
+                    num_item(2, Name::IndexI(CName::ConstTmp)),
                 ])));
                 ctx.out.init.push(CodeBlock::Bracket {
                     repeat: true,

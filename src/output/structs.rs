@@ -43,6 +43,7 @@ pub enum VarAction {
     #[serde(rename = "=")]
     Set,
     CreateList,
+    TrimList,
     AppendValue,
     SetListValue,
 }
@@ -94,7 +95,7 @@ impl ChestArgs {
 
 #[derive(Serialize, Clone)]
 pub struct ChestSlot {
-    pub slot: usize,
+    pub slot: u32,
     pub item: ItemData,
 }
 
