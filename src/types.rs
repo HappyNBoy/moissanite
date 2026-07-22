@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 use anyhow::{bail, Result};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use crate::reader::{Readable, UnencodedU32, BinaryReader};
@@ -72,7 +72,15 @@ impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::I32(x) => write!(f, "{}.{:03}", (*x as u32) / 1000, (*x as u32) % 1000),
-            _ => todo!("values that aren't i32")
+            Value::I64(x) => {
+                let mut x = *x;
+                if x < 0 {
+                    f.write_char('-')?;
+                    x = -x;
+                }
+                write!(f, "{}.{:03}", x / 1000, x % 1000)
+            },
+            _ => todo!("floating point implementation")
         }
     }
 }
