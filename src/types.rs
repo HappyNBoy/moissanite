@@ -8,7 +8,7 @@ macro_rules! generate_magic {
         pub struct $name;
         impl Readable for $name {
             fn read(reader: &mut BinaryReader) -> Result<$name> {
-                let target = $val;
+                let target = const { $val };
                 let magic = reader.read()?;
                 
                 // force the types to be exactly equal to prevent PartialEq confusion
