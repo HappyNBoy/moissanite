@@ -33,6 +33,7 @@ pub enum Name {
 
     // Constant Codes
     AddIOffset(u32),
+    MemoryI(u32),
     IndexI(CName),
 }
 
@@ -69,6 +70,7 @@ impl Display for Name {
         match self {
             Name::CName(x) => x.fmt(f),
             Name::AddIOffset(x) => write!(f, "%math(%var({})+{x})", CName::ConstI),
+            Name::MemoryI(i) => write!(f, "_mm_{i}_%var({})", CName::ConstI),
             Name::IndexI(x) => write!(f, "%index({x},{})", CName::ConstI),
         }
     }

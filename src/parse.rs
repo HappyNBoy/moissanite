@@ -65,15 +65,31 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                 .map(|t| t.limit)
                 .collect();
             for (i, l) in ctx.tables.iter().enumerate() {
-                ctx.out.init_list(CName::Table(i as u32).into(), VarScope::Global, l.min);
+                ctx.out.init.push(list_with_len(CName::Table(i as u32).into(), VarScope::Global, l.min));
             }
         },
         Section::Memory => {
             ctx.memories = reader.read()?;
             for (i, l) in ctx.memories.iter().enumerate() {
-                for j in 0..l.min {
-                    ctx.out.init_list(CName::Memory(i as u32, j).into(), VarScope::Global, PAGE_SIZE);
-                }
+                // for j in 0..l.min {
+                //     ctx.out.init_list(CName::Memory(i as u32, j).into(), VarScope::Global, PAGE_SIZE);
+                // }
+                ctx.out.init.push(CodeBlock::Block(CodeBlockInner::Repeat {
+                    action: RepeatAction::Multiple,
+                    args: chest_args(vec![
+                        var_item(0, CName::ConstI.into(), VarScope::Line),
+                        num_item(1, CName::CountValue(l.min).into()),
+                    ]),
+                }));
+                ctx.out.init.push(CodeBlock::Bracket {
+                    repeat: true,
+                    close: false,
+                });
+                ctx.out.init.push(list_with_len(Name::MemoryI(i as u32), VarScope::Global, PAGE_SIZE_LEN));
+                ctx.out.init.push(CodeBlock::Bracket {
+                    repeat: true,
+                    close: true,
+                });
             }
         },
         Section::Global => {

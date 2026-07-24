@@ -7,7 +7,8 @@ use anyhow::Result;
 use crate::types::FunctionType;
 
 pub const MAX_SIZE: u32 = 10000;
-pub const PAGE_SIZE: u32 = 65536;
+pub const PAGE_SIZE_BYTES: u32 = 65536;
+pub const PAGE_SIZE_LEN: u32 = PAGE_SIZE_BYTES / 8;
 
 fn create_line(name: Name, args: ChestArgs) -> OutputLine {
     OutputLine::from(vec![CodeBlock::Block(
@@ -59,6 +60,14 @@ pub fn var_item(i: u32, name: Name, scope: VarScope) -> ChestSlot {
 
 pub fn num_item(i: u32, value: Name) -> ChestSlot {
     chest_item(i, ItemData::Number { value })
+}
+
+pub fn list_with_len(name: Name, scope: VarScope, len: u32) -> CodeBlock {
+    var_block(VarAction::TrimList, chest_args(vec![
+        var_item(0, name, scope),
+        var_item(1, CName::ConstBlank.into(), VarScope::Global),
+        num_item(2, CName::CountValue(len).into()),
+    ]))
 }
 
 impl OutputLine {
@@ -137,13 +146,5 @@ impl Output {
             }).collect(),
             init,
         }
-    }
-
-    pub fn init_list(&mut self, name: Name, scope: VarScope, len: u32) {
-        self.init.push(var_block(VarAction::TrimList, chest_args(vec![
-            var_item(0, name, scope),
-            var_item(1, CName::ConstBlank.into(), VarScope::Global),
-            num_item(2, CName::CountValue(len).into()),
-        ])))
     }
 }
