@@ -38,7 +38,7 @@ pub fn chest_item(slot: u32, item: ItemData) -> ChestSlot {
 
 pub fn function_result(i: u32) -> ChestSlot {
     chest_item(i, ItemData::Parameter {
-        name: CName::Stack(i).into(), // the result variables are automatically the bottom of the stack
+        name: CName::Register(i).into(), // the result variables are automatically the bottom of the stack
         optional: false,
         plural: false,
         param_type: ParameterType::Variable,

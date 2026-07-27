@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter, Write};
 use serde::{Serialize, Serializer};
+use crate::output::PAGE_SIZE_LEN;
 use crate::types::Value;
 
 // Names which do not reference other names and do not involve runtime calculations
@@ -19,7 +20,7 @@ pub enum CName {
     // Variables
     Local(u32),
     Global(u32),
-    Stack(u32),
+    Register(u32),
     Table(u32),
     Memory(u32, u32),
     Function(u32),
@@ -32,9 +33,16 @@ pub enum Name {
     CName(CName),
 
     // Constant Codes
+    VarCode(CName),
     AddIOffset(u32),
     MemoryI(u32),
     IndexI(CName),
+    
+    // Dynamic Codes
+    IndexInto(Box<Name>, Box<Name>),
+    PageQuotient(u32, Box<Name>),
+    PageRemainder(Box<Name>),
+    MathAdd(Box<Name>, Box<Name>),
 }
 
 impl From<CName> for Name {
@@ -57,21 +65,28 @@ impl Display for CName {
 
             CName::Local(x) => write!(f, "_ml_{x}"),
             CName::Global(x) => write!(f, "_mg_{x}"),
-            CName::Stack(x) => write!(f, "_ms_{x}"),
+            CName::Register(x) => write!(f, "_mr_{x}"),
             CName::Table(x) => write!(f, "_mt_{x}"),
             CName::Memory(x, y) => write!(f, "_mm_{x}_{y}"),
             CName::Function(x) => write!(f, "_mf_{x}"),
         }
-    }
+    } 
 }
 
 impl Display for Name {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Name::CName(x) => x.fmt(f),
+
+            Name::VarCode(val) => write!(f, "%var({val})"),
             Name::AddIOffset(x) => write!(f, "%math(%var({})+{x})", CName::ConstI),
             Name::MemoryI(i) => write!(f, "_mm_{i}_%var({})", CName::ConstI),
             Name::IndexI(x) => write!(f, "%index({x},{})", CName::ConstI),
+
+            Name::IndexInto(list, index) => write!(f, "%index({list},{index})"),
+            Name::PageQuotient(memory, index) => write!(f, "_mm_{memory}_%math({index}/{PAGE_SIZE_LEN})"),
+            Name::PageRemainder(index) => write!(f, "%math({index}%{PAGE_SIZE_LEN})"),
+            Name::MathAdd(a, b) => write!(f, "%math({a}+{b})"),
         }
     }
 }

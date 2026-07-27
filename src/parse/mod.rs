@@ -1,6 +1,9 @@
+mod vars;
+
 use anyhow::{bail, Context as _, Result};
 use crate::Context;
 use crate::output::*;
+use crate::parse::vars::FnState;
 use crate::reader::{BinaryReader};
 use crate::types::{ModuleMagic, Section, TableType, Value, ValueType, WasmVersion};
 
@@ -145,8 +148,37 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                     close: true,
                 });
             }
+        },
+        Section::Code => {
+            let func_count = reader.read::<u32>()? as usize;
+            if func_count != ctx.functions.len() {
+                bail!("Function count between section does not match; Expected {}, found {func_count}", ctx.functions.len())
+            }
+            for func_id in 0..func_count {
+                reader.scope_in(|reader| {
+                    let mut locals = Vec::new();
+                    let local_count = reader.read::<u32>()? as usize;
+                    for i in 0..local_count {
+                        let count: u32 = reader.read()?;
+                        let kind: ValueType = reader.read()?;
+                        for _ in 0..count {
+                            locals.push(kind);
+                        }
+                    }
+
+                    let mut state = FnState::new(std::mem::take(&mut ctx.out.functions[func_id]), locals);
+                    parse_function(&mut state, ctx)?;
+                    ctx.out.functions[func_id] = state.consume();
+
+                    Ok(())
+                }).with_context(|| format!("Failed to parse function with id {func_id}"))?;
+            }
         }
         _ => todo!("finish all sections")
     }
     Ok(())
+}
+
+pub fn parse_function(state: &mut FnState, ctx: &mut Context) -> Result<()> {
+    todo!("parse_function")
 }

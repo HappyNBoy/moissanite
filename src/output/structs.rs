@@ -6,7 +6,7 @@ pub struct Output {
     pub init: OutputLine,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 pub struct OutputLine {
     pub blocks: Vec<CodeBlock>,
 }
@@ -46,6 +46,9 @@ pub enum VarAction {
     TrimList,
     AppendValue,
     SetListValue,
+    GetListValue,
+    #[serde(rename = "+")]
+    Sum,
 }
 
 #[derive(Serialize, Copy, Clone, PartialEq)]
