@@ -1,11 +1,11 @@
 mod vars;
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{anyhow, bail, Context as _, Result};
 use crate::Context;
 use crate::output::*;
-use crate::parse::vars::FnState;
+use crate::parse::vars::{FnState, StackEntry, TrueVariable, Variable};
 use crate::reader::{BinaryReader};
-use crate::types::{ModuleMagic, Section, TableType, Value, ValueType, WasmVersion};
+use crate::types::{InstructionKind, ModuleMagic, Section, TableType, Value, ValueType, WasmVersion};
 
 pub fn parse_module(reader: &mut BinaryReader, ctx: &mut Context) -> Result<()> {
     reader.read::<ModuleMagic>()?;
@@ -14,13 +14,14 @@ pub fn parse_module(reader: &mut BinaryReader, ctx: &mut Context) -> Result<()> 
     while !reader.is_empty() {
         let section = reader.read::<u32>()?.try_into()?;
 
-        if section == Section::Code {
+        if section == Section::Data {
             return Ok(());
         }
 
         if section == Section::Custom {
             println!("Ignoring custom section");
             reader.skip_scope()?;
+            continue;
         } else if section <= last_section {
             bail!(
                 "Invalid section order; section {section:?} appears after section {last_section:?}"
@@ -156,9 +157,9 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
             }
             for func_id in 0..func_count {
                 reader.scope_in(|reader| {
-                    let mut locals = Vec::new();
-                    let local_count = reader.read::<u32>()? as usize;
-                    for i in 0..local_count {
+                    let mut locals = ctx.function_types[ctx.functions[func_id] as usize].parameters.clone().to_vec();
+                    let local_count = reader.read::<u32>()?;
+                    for _ in 0..local_count {
                         let count: u32 = reader.read()?;
                         let kind: ValueType = reader.read()?;
                         for _ in 0..count {
@@ -167,7 +168,7 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                     }
 
                     let mut state = FnState::new(std::mem::take(&mut ctx.out.functions[func_id]), locals);
-                    parse_function(&mut state, ctx)?;
+                    parse_function(reader, &mut state)?;
                     ctx.out.functions[func_id] = state.consume();
 
                     Ok(())
@@ -179,6 +180,43 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
     Ok(())
 }
 
-pub fn parse_function(state: &mut FnState, ctx: &mut Context) -> Result<()> {
-    todo!("parse_function")
+pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState) -> Result<()> {
+    loop {
+        let kind = reader.read::<InstructionKind>()?;
+        match kind {
+            InstructionKind::LocalGet => {
+                let local: u32 = reader.read()?;
+                let kind = *state.locals.get(local as usize).ok_or_else(
+                    || anyhow!("Local index out of bounds; requested local {local}, only {} exist", state.locals.len())
+                )?;
+                state.stack.push(StackEntry { value: Variable::TrueVariable(TrueVariable::Local(local)), kind });
+            },
+            InstructionKind::I32Add => {
+                if state.stack.len() >= 2 {
+                    let rhs = state.stack.pop().unwrap();
+                    let mut lhs = state.stack.pop().unwrap();
+                    if lhs.kind == rhs.kind {
+                        lhs.value = Variable::Addition(Box::new(lhs.value), Box::new(rhs.value));
+                        state.stack.push(lhs);
+                        continue;
+                    }
+                }
+                bail!("Stack items missing or mismatched");
+            },
+            // hardcoded atm
+            InstructionKind::EndInstructions => {
+                if state.stack.len() == 1 {
+                    let entry = state.stack.pop().unwrap();
+                    if entry.kind == ValueType::I32 {
+                        state.assign(TrueVariable::Register(0), &entry.value);
+                        println!("finished function!");
+                        break;
+                    }
+                }
+                bail!("Stack items missing or mismatched");
+            },
+            _ => panic!("instruction not implemented")
+        }
+    }
+    Ok(())
 }

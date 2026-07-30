@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter, Write};
 use serde::{Serialize, Serializer};
-use crate::output::PAGE_SIZE_LEN;
 use crate::types::Value;
 
 // Names which do not reference other names and do not involve runtime calculations
@@ -39,9 +38,6 @@ pub enum Name {
     IndexI(CName),
     
     // Dynamic Codes
-    IndexInto(Box<Name>, Box<Name>),
-    PageQuotient(u32, Box<Name>),
-    PageRemainder(Box<Name>),
     MathAdd(Box<Name>, Box<Name>),
 }
 
@@ -83,9 +79,6 @@ impl Display for Name {
             Name::MemoryI(i) => write!(f, "_mm_{i}_%var({})", CName::ConstI),
             Name::IndexI(x) => write!(f, "%index({x},{})", CName::ConstI),
 
-            Name::IndexInto(list, index) => write!(f, "%index({list},{index})"),
-            Name::PageQuotient(memory, index) => write!(f, "_mm_{memory}_%math({index}/{PAGE_SIZE_LEN})"),
-            Name::PageRemainder(index) => write!(f, "%math({index}%{PAGE_SIZE_LEN})"),
             Name::MathAdd(a, b) => write!(f, "%math({a}+{b})"),
         }
     }

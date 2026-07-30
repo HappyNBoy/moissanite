@@ -134,6 +134,7 @@ pub enum ParameterType {
 }
 
 #[derive(Serialize, Copy, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum VarScope {
     Saved,
     #[serde(rename = "unsaved")]
