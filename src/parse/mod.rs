@@ -166,10 +166,7 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                     }
 
                     let mut state = FnState::new(std::mem::take(&mut ctx.out.functions[func_id]), locals);
-                    let result = ctx.function_types[type_id].results
-                        .iter().copied().enumerate()
-                        .map(|(i, x)| (i as u32, x)).collect::<Vec<_>>();
-                    parse_function(reader, &mut state, &result)?;
+                    parse_function(reader, &mut state, &ctx.function_types[type_id].results)?;
                     ctx.out.functions[func_id] = state.consume();
 
                     Ok(())
@@ -181,7 +178,7 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
     Ok(())
 }
 
-pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState, result: &[(u32, ValueType)]) -> Result<()> {
+pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState, results: &[ValueType]) -> Result<()> {
     macro_rules! pop_push {
         ($val:ident, $var:ident) => {{
             let v = Box::new(pop_stack(ValueType::$val, state)?);
@@ -204,15 +201,15 @@ pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState, result: &[
             InstructionKind::I32Add => pop_push!(I32, Addition),
             // hardcoded atm
             InstructionKind::EndInstructions => {
-                if state.stack.len() != result.len() {
+                if state.stack.len() != results.len() {
                     bail!("Stack length mismatched on scope exit");
                 }
                 let stack = std::mem::take(&mut state.stack);
-                for (entry, (reg, kind)) in stack.into_iter().zip(result) {
+                for ((reg, kind), entry) in results.into_iter().enumerate().zip(stack) {
                     if entry.kind != *kind {
                         bail!("Stack kinds mismatched");
                     }
-                    state.assign(TrueVariable::Register(*reg), &entry.value);
+                    state.assign(TrueVariable::Register(reg as u32), &entry.value);
                 }
                 break;
             },
