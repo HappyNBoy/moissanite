@@ -199,7 +199,6 @@ pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState, results: &
                 state.stack.push(StackEntry { value: Variable::TrueVariable(TrueVariable::Local(local)), kind });
             },
             InstructionKind::I32Add => pop_push!(I32, Addition),
-            // hardcoded atm
             InstructionKind::EndInstructions => {
                 if state.stack.len() != results.len() {
                     bail!("Stack length mismatched on scope exit");
