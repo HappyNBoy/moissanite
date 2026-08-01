@@ -39,7 +39,7 @@ pub enum TrueVariable {
 #[derive(Debug, Clone)]
 pub enum Variable {
     TrueVariable(TrueVariable),
-    Addition(Box<Variable>, Box<Variable>), // lhs, rhs
+    Addition(Box<[Variable; 2]>),
 }
 
 impl From<TrueVariable> for ItemData {
@@ -95,18 +95,11 @@ impl FnState {
         self.line
     }
 
-    fn get_var(&self, pos: usize) -> &Variable {
-        &self.stack[pos].value
-    }
-    fn get_var_mut(&mut self, pos: usize) -> &mut Variable {
-        &mut self.stack[pos].value
-    }
-
     /// Creates a Name that evaluates to the variable by using DF percent codes.
     fn var_code(&self, var: &Variable) -> Name {
         match var {
             &Variable::TrueVariable(x) => x.into(),
-            Variable::Addition(a, b) => Name::MathAdd(Box::new(self.var_code(a)), Box::new(self.var_code(b)))
+            Variable::Addition(v) => Name::MathAdd(Box::new(self.var_code(&v[0])), Box::new(self.var_code(&v[1])))
         }
     }
 
@@ -143,11 +136,11 @@ impl FnState {
                     ])));
                 }
             },
-            Variable::Addition(a, b) => {
+            Variable::Addition(v) => {
                 self.line.push(var_block(VarAction::Sum, chest_args(vec![
                     ChestSlot { slot: 0, item: dest.into() },
-                    ChestSlot { slot: 1, item: self.make_item(a) },
-                    ChestSlot { slot: 2, item: self.make_item(b) },
+                    ChestSlot { slot: 1, item: self.make_item(&v[0]) },
+                    ChestSlot { slot: 2, item: self.make_item(&v[1]) },
                 ])));
             },
         }

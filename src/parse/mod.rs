@@ -75,9 +75,6 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
         Section::Memory => {
             ctx.memories = reader.read()?;
             for (i, l) in ctx.memories.iter().enumerate() {
-                // for j in 0..l.min {
-                //     ctx.out.init_list(CName::Memory(i as u32, j).into(), VarScope::Global, PAGE_SIZE);
-                // }
                 ctx.out.init.push(CodeBlock::Block(CodeBlockInner::Repeat {
                     action: RepeatAction::Multiple,
                     args: chest_args(vec![
@@ -181,28 +178,26 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
 }
 
 pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState) -> Result<()> {
+    macro_rules! pop_push {
+        ($val:ident, $var:ident) => {{
+            let v = Box::new(pop_stack(ValueType::$val, state)?);
+            state.stack.push(StackEntry {
+                value: Variable::$var(v),
+                kind: ValueType::$val,
+            });
+        }};
+    }
     loop {
         let kind = reader.read::<InstructionKind>()?;
         match kind {
             InstructionKind::LocalGet => {
                 let local: u32 = reader.read()?;
                 let kind = *state.locals.get(local as usize).ok_or_else(
-                    || anyhow!("Local index out of bounds; requested local {local}, only {} exist", state.locals.len())
+                    || anyhow!("Local index out of bounds; Requested local {local}, only {} exist", state.locals.len())
                 )?;
                 state.stack.push(StackEntry { value: Variable::TrueVariable(TrueVariable::Local(local)), kind });
             },
-            InstructionKind::I32Add => {
-                if state.stack.len() >= 2 {
-                    let rhs = state.stack.pop().unwrap();
-                    let mut lhs = state.stack.pop().unwrap();
-                    if lhs.kind == rhs.kind {
-                        lhs.value = Variable::Addition(Box::new(lhs.value), Box::new(rhs.value));
-                        state.stack.push(lhs);
-                        continue;
-                    }
-                }
-                bail!("Stack items missing or mismatched");
-            },
+            InstructionKind::I32Add => pop_push!(I32, Addition),
             // hardcoded atm
             InstructionKind::EndInstructions => {
                 if state.stack.len() == 1 {
@@ -219,4 +214,42 @@ pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState) -> Result<
         }
     }
     Ok(())
+}
+
+fn pop_stack<const N: usize>(kind: ValueType, state: &mut FnState) -> Result<[Variable; N]> {
+    if state.stack.len() >= N {
+        if let Some(vec) = (0..N).into_iter().map(|_| {
+            let entry = state.stack.pop().unwrap();
+            if entry.kind == kind {
+                Some(entry.value)
+            } else {
+                None
+            }
+        }).collect::<Option<Vec<_>>>() {
+            Ok(vec.try_into().unwrap())
+        } else {
+            Err(anyhow!("Stack kinds mismatched"))
+        }
+    } else {
+        Err(anyhow!("Stack items missing"))
+    }
+}
+
+fn pop_stack_dyn<const N: usize>(kinds: &[ValueType; N], state: &mut FnState) -> Result<[Variable; N]> {
+    if state.stack.len() >= N {
+        if let Some(vec) = kinds.into_iter().map(|kind| {
+            let entry = state.stack.pop().unwrap();
+            if entry.kind == *kind {
+                Some(entry.value)
+            } else {
+                None
+            }
+        }).collect::<Option<Vec<_>>>() {
+            Ok(vec.try_into().unwrap())
+        } else {
+            Err(anyhow!("Stack kinds mismatched"))
+        }
+    } else {
+        Err(anyhow!("Stack items missing"))
+    }
 }
