@@ -154,7 +154,8 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
             }
             for func_id in 0..func_count {
                 reader.scope_in(|reader| {
-                    let mut locals = ctx.function_types[ctx.functions[func_id] as usize].parameters.clone().to_vec();
+                    let type_id = ctx.functions[func_id] as usize;
+                    let mut locals = ctx.function_types[type_id].parameters.clone().to_vec();
                     let local_count = reader.read::<u32>()?;
                     for _ in 0..local_count {
                         let count: u32 = reader.read()?;
@@ -165,7 +166,10 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                     }
 
                     let mut state = FnState::new(std::mem::take(&mut ctx.out.functions[func_id]), locals);
-                    parse_function(reader, &mut state)?;
+                    let result = ctx.function_types[type_id].results
+                        .iter().copied().enumerate()
+                        .map(|(i, x)| (i as u32, x)).collect::<Vec<_>>();
+                    parse_function(reader, &mut state, &result)?;
                     ctx.out.functions[func_id] = state.consume();
 
                     Ok(())
@@ -177,7 +181,7 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
     Ok(())
 }
 
-pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState) -> Result<()> {
+pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState, result: &[(u32, ValueType)]) -> Result<()> {
     macro_rules! pop_push {
         ($val:ident, $var:ident) => {{
             let v = Box::new(pop_stack(ValueType::$val, state)?);
@@ -200,15 +204,17 @@ pub fn parse_function(reader: &mut BinaryReader, state: &mut FnState) -> Result<
             InstructionKind::I32Add => pop_push!(I32, Addition),
             // hardcoded atm
             InstructionKind::EndInstructions => {
-                if state.stack.len() == 1 {
-                    let entry = state.stack.pop().unwrap();
-                    if entry.kind == ValueType::I32 {
-                        state.assign(TrueVariable::Register(0), &entry.value);
-                        println!("finished function!");
-                        break;
-                    }
+                if state.stack.len() != result.len() {
+                    bail!("Stack length mismatched on scope exit");
                 }
-                bail!("Stack items missing or mismatched");
+                let stack = std::mem::take(&mut state.stack);
+                for (entry, (reg, kind)) in stack.into_iter().zip(result) {
+                    if entry.kind != *kind {
+                        bail!("Stack kinds mismatched");
+                    }
+                    state.assign(TrueVariable::Register(*reg), &entry.value);
+                }
+                break;
             },
             _ => panic!("instruction not implemented")
         }
