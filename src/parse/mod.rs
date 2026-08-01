@@ -241,21 +241,21 @@ fn pop_stack<const N: usize>(kind: ValueType, state: &mut FnState) -> Result<[Va
     }
 }
 
-fn pop_stack_dyn<const N: usize>(kinds: &[ValueType; N], state: &mut FnState) -> Result<[Variable; N]> {
-    if state.stack.len() >= N {
-        if let Some(vec) = kinds.into_iter().map(|kind| {
-            let entry = state.stack.pop().unwrap();
-            if entry.kind == *kind {
-                Some(entry.value)
-            } else {
-                None
-            }
-        }).collect::<Option<Vec<_>>>() {
-            Ok(vec.try_into().unwrap())
-        } else {
-            Err(anyhow!("Stack kinds mismatched"))
-        }
-    } else {
-        Err(anyhow!("Stack items missing"))
-    }
-}
+// fn pop_stack_dyn<const N: usize>(kinds: &[ValueType; N], state: &mut FnState) -> Result<[Variable; N]> {
+//     if state.stack.len() >= N {
+//         if let Some(vec) = kinds.into_iter().map(|kind| {
+//             let entry = state.stack.pop().unwrap();
+//             if entry.kind == *kind {
+//                 Some(entry.value)
+//             } else {
+//                 None
+//             }
+//         }).collect::<Option<Vec<_>>>() {
+//             Ok(vec.try_into().unwrap())
+//         } else {
+//             Err(anyhow!("Stack kinds mismatched"))
+//         }
+//     } else {
+//         Err(anyhow!("Stack items missing"))
+//     }
+// }
