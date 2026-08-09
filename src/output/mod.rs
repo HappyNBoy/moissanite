@@ -2,7 +2,7 @@ pub mod structs;
 pub mod names;
 
 pub use structs::*;
-pub use names::{Name, CName};
+pub use names::Name;
 use anyhow::Result;
 use crate::types::FunctionType;
 
@@ -38,7 +38,7 @@ pub fn chest_item(slot: u32, item: ItemData) -> ChestSlot {
 
 pub fn function_result(i: u32) -> ChestSlot {
     chest_item(i, ItemData::Parameter {
-        name: CName::Register(i).into(), // the result variables are automatically the bottom of the stack
+        name: Name::register(i), // the result variables are automatically the bottom of the stack
         optional: false,
         plural: false,
         param_type: ParameterType::Variable,
@@ -47,7 +47,7 @@ pub fn function_result(i: u32) -> ChestSlot {
 
 pub fn function_parameter(i: u32, results: u32) -> ChestSlot {
     chest_item(results + i, ItemData::Parameter {
-        name: CName::Local(i).into(),
+        name: Name::local(i),
         optional: false,
         plural: false,
         param_type: ParameterType::Number,
@@ -65,8 +65,8 @@ pub fn num_item(i: u32, value: Name) -> ChestSlot {
 pub fn list_with_len(name: Name, scope: VarScope, len: u32) -> CodeBlock {
     var_block(VarAction::TrimList, chest_args(vec![
         var_item(0, name, scope),
-        var_item(1, CName::ConstBlank.into(), VarScope::Global),
-        num_item(2, CName::CountValue(len).into()),
+        var_item(1, Name::const_blank(), VarScope::Global),
+        num_item(2, Name::integer(len)),
     ]))
 }
 
@@ -106,16 +106,16 @@ impl Output {
     }
 
     pub fn init(functions: &[u32], function_types: &[FunctionType]) -> Self {
-        let mut init = create_line(CName::ConstInitFn.into(), ChestArgs::empty());
+        let mut init = create_line(Name::const_init_fn(), ChestArgs::empty());
         // fill a blank page for the easier creation of new pages
-        let blank_item = var_item(0, CName::ConstBlank.into(), VarScope::Global);
+        let blank_item = var_item(0, Name::const_blank(), VarScope::Global);
         init.push(var_block(VarAction::CreateList, chest_args(vec![
             blank_item.clone()
         ])));
         init.push(CodeBlock::Block(CodeBlockInner::Repeat {
             action: RepeatAction::Multiple,
             args: chest_args(vec![
-                num_item(0, CName::CountValue(MAX_SIZE).into())
+                num_item(0, Name::integer(MAX_SIZE))
             ]),
         }));
         init.push(CodeBlock::Bracket {
@@ -124,7 +124,7 @@ impl Output {
         });
         init.push(var_block(VarAction::AppendValue, chest_args(vec![
             blank_item,
-            num_item(1, CName::ConstZero.into()),
+            num_item(1, Name::integer(0)),
         ])));
         init.push(CodeBlock::Bracket {
             repeat: true,
@@ -142,7 +142,7 @@ impl Output {
                 for i in 0..parameters_len {
                     items.push(function_parameter(i as u32, results_len as u32));
                 }
-                create_line(CName::Function(id as u32).into(), chest_args(items))
+                create_line(Name::function(id as u32), chest_args(items))
             }).collect(),
             init,
         }

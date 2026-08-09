@@ -1,4 +1,5 @@
-use crate::output::{chest_args, var_block, CName, ChestSlot, ItemData, Name, OutputLine, VarAction, VarScope};
+use crate::{fmt_eager, fmt_name};
+use crate::output::{chest_args, var_block, ChestSlot, ItemData, Name, OutputLine, VarAction, VarScope};
 use crate::types::ValueType;
 
 pub struct RegisterManager {
@@ -46,15 +47,15 @@ impl From<TrueVariable> for ItemData {
     fn from(value: TrueVariable) -> Self {
         match value {
             TrueVariable::Register(x) => ItemData::Variable {
-                name: CName::Register(x).into(),
+                name: Name::register(x),
                 scope: VarScope::Line
             },
             TrueVariable::Local(x) => ItemData::Variable {
-                name: CName::Local(x).into(),
+                name: Name::local(x),
                 scope: VarScope::Line
             },
             TrueVariable::Global(x) => ItemData::Variable {
-                name: CName::Global(x).into(),
+                name: Name::global(x),
                 scope: VarScope::Global
             },
         }
@@ -63,10 +64,10 @@ impl From<TrueVariable> for ItemData {
 
 impl From<TrueVariable> for Name {
     fn from(value: TrueVariable) -> Self {
-        Name::VarCode(match value {
-            TrueVariable::Register(x) => CName::Register(x),
-            TrueVariable::Local(x) => CName::Local(x),
-            TrueVariable::Global(x) => CName::Global(x),
+        fmt_eager!("%var({a})", match value {
+            TrueVariable::Register(x) => Name::register(x),
+            TrueVariable::Local(x) => Name::local(x),
+            TrueVariable::Global(x) => Name::global(x),
         })
     }
 }
@@ -99,7 +100,10 @@ impl FnState {
     fn var_code(&self, var: &Variable) -> Name {
         match var {
             &Variable::TrueVariable(x) => x.into(),
-            Variable::Addition(v) => Name::MathAdd(Box::new(self.var_code(&v[0])), Box::new(self.var_code(&v[1])))
+            Variable::Addition(v) => fmt_eager!(
+                "%math({a},{b})",
+                self.var_code(&v[0]), self.var_code(&v[1])
+            ),
         }
     }
 
