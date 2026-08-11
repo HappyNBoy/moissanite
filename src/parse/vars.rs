@@ -147,18 +147,6 @@ mod codegen {
         }
     }
 
-    // #[inline(always)]
-    // pub(super) fn format_inner<const N: usize>(f: &mut String, state: &mut FnState, args: [Argument; N], vars: &[Variable]) {
-    //     let mut i = 0;
-    //     while i < N {
-    //         match args[i] {
-    //             Argument::String(string) => f.push_str(string),
-    //             Argument::Variable(var) => var_code(f, state, &vars[var])
-    //         }
-    //         i += 1;
-    //     }
-    // }
-
     #[inline(always)]
     pub(super) fn fmt_inner<const N: usize>(f: &mut String, state: &mut FnState, args: [Argument; N], i: usize, vars: &[Variable]) {
         if i < N {
@@ -186,7 +174,6 @@ mod codegen {
                 codegen::make_args($template, &mut arr);
                 arr
             };
-            // codegen::format_inner($f, $state, ARGS, $vars)
             unroll_args!(ARGS, $f, $state, $vars,
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
              17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
