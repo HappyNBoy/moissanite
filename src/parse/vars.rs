@@ -1,4 +1,5 @@
 use crate::output::{chest_args, names, var_block, ChestSlot, ItemData, OutputLine, VarAction, VarScope};
+use crate::output::structs::Tag;
 use crate::types::ValueType;
 use std::fmt::Write;
 
@@ -41,6 +42,7 @@ pub enum TrueVariable {
 pub enum Variable {
     TrueVariable(TrueVariable),
     Addition(Box<[Variable; 2]>),
+    I32ShrU(Box<[Variable; 2]>),
 }
 
 impl From<TrueVariable> for ItemData {
@@ -257,6 +259,16 @@ impl FnState {
                 ]);
                 self.line.push(var_block(VarAction::Sum, args));
             },
+            Variable::I32ShrU(v) => {
+                let args = chest_args(vec![
+                    ChestSlot { slot: 0,  item: dest.into() },
+                    ChestSlot { slot: 1,  item: self.make_item(&v[0]) },
+                    ChestSlot { slot: 2,  item: self.make_item(&v[1]) },
+                    ChestSlot { slot: 25, item: ItemData::Tag(Tag::BitwiseTrue)  },
+                    ChestSlot { slot: 26, item: ItemData::Tag(Tag::BitwiseShrU)  },
+                ]);
+                self.line.push(var_block(VarAction::Bitwise, args));
+            }
         }
     }
 }

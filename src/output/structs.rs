@@ -49,6 +49,7 @@ pub enum VarAction {
     GetListValue,
     #[serde(rename = "+")]
     Sum,
+    Bitwise,
 }
 
 #[derive(Serialize, Copy, Clone, PartialEq)]
@@ -157,7 +158,7 @@ struct TagInner {
 #[repr(usize)]
 pub enum Tag {
     BitwiseTrue = 0,
-    BitwiseRightShift = 1
+    BitwiseShrU = 1
 }
 
 macro_rules! tags {
