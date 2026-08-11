@@ -1,5 +1,4 @@
 use serde::{Serialize, Serializer};
-use super::Name;
 
 pub struct Output {
     pub functions: Box<[OutputLine]>,
@@ -22,7 +21,7 @@ impl From<Vec<CodeBlock>> for OutputLine {
 pub enum CodeBlockInner {
     #[serde(rename = "func")]
     Function {
-        data: Name,
+        data: String,
         args: ChestArgs,
     },
     #[serde(rename = "set_var")]
@@ -108,16 +107,16 @@ pub enum ItemData {
     #[serde(rename = "num")]
     Number {
         #[serde(rename = "name")]
-        value: Name,
+        value: String,
     },
     #[serde(rename = "var")]
     Variable {
-        name: Name,
+        name: String,
         scope: VarScope,
     },
     #[serde(rename = "pn_el")]
     Parameter {
-        name: Name,
+        name: String,
         optional: bool,
         plural: bool,
         #[serde(rename = "type")]

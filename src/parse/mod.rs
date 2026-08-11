@@ -1,7 +1,7 @@
 mod vars;
 
 use anyhow::{anyhow, bail, Context as _, Result};
-use crate::{fmt_name, Context};
+use crate::Context;
 use crate::output::*;
 use crate::parse::vars::{FnState, StackEntry, TrueVariable, Variable};
 use crate::reader::{BinaryReader};
@@ -69,7 +69,7 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                 .map(|t| t.limit)
                 .collect();
             for (i, l) in ctx.tables.iter().enumerate() {
-                ctx.out.init.push(list_with_len(Name::table(i as u32), VarScope::Global, l.min));
+                ctx.out.init.push(list_with_len(names::table(i as u32), VarScope::Global, l.min));
             }
         },
         Section::Memory => {
@@ -78,15 +78,15 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                 ctx.out.init.push(CodeBlock::Block(CodeBlockInner::Repeat {
                     action: RepeatAction::Multiple,
                     args: chest_args(vec![
-                        var_item(0, Name::const_i(), VarScope::Line),
-                        num_item(1, Name::integer(l.min)),
+                        var_item(0, names::I.into(), VarScope::Line),
+                        num_item(1, names::integer(l.min)),
                     ]),
                 }));
                 ctx.out.init.push(CodeBlock::Bracket {
                     repeat: true,
                     close: false,
                 });
-                ctx.out.init.push(list_with_len(fmt_name!("_mm_{i}_%var(i)"), VarScope::Global, PAGE_SIZE_LEN));
+                ctx.out.init.push(list_with_len(names::memory(&i, &names::p_var(&names::I)), VarScope::Global, PAGE_SIZE_LEN));
                 ctx.out.init.push(CodeBlock::Bracket {
                     repeat: true,
                     close: true,
@@ -98,8 +98,8 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
             ctx.globals.iter().enumerate()
                 .for_each(|(i, g)| {
                     ctx.out.init.push(var_block(VarAction::Set, chest_args(vec![
-                        var_item(0, Name::global(i as u32), VarScope::Global),
-                        num_item(1, Name::value(g.value)),
+                        var_item(0, names::global(i as u32), VarScope::Global),
+                        num_item(1, names::value(g.value)),
                     ])));
                 });
         },
@@ -118,17 +118,17 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
 
                 // create a temporary elem list
                 let count = values.len();
-                ctx.out.init.create_list(Name::const_tmp(), VarScope::Line,
+                ctx.out.init.create_list(names::TMP.into(), VarScope::Line,
                                       values.map(|x| x.map(|x|
-                                          ItemData::Number { value: Name::value(Value::I32(x as i32)) })
+                                          ItemData::Number { value: names::value(Value::I32(x as i32)) })
                                       )
                 )?;
                 // copy over the numbers one by one
                 ctx.out.init.push(CodeBlock::Block(CodeBlockInner::Repeat {
                     action: RepeatAction::Multiple,
                     args: chest_args(vec![
-                        var_item(0, Name::const_i(), VarScope::Line),
-                        num_item(1, Name::integer(count as u32)),
+                        var_item(0, names::I.into(), VarScope::Line),
+                        num_item(1, names::integer(count as u32)),
                     ]),
                 }));
                 ctx.out.init.push(CodeBlock::Bracket {
@@ -137,9 +137,9 @@ pub fn parse_section(section: Section, reader: &mut BinaryReader, ctx: &mut Cont
                 });
                 // copy the value into the table by the given offset
                 ctx.out.init.push(var_block(VarAction::SetListValue, chest_args(vec![
-                    var_item(0, Name::table(table), VarScope::Global),
-                    num_item(1, fmt_name!("%math(%var(i)+{offset})")),
-                    num_item(2, fmt_name!("%index(_m_tmp,%var(i))")),
+                    var_item(0, names::table(table), VarScope::Global),
+                    num_item(1, format!("%math(%var({})+{offset})", names::I)),
+                    num_item(2, format!("%index(_m_tmp,%var({}))", names::I)),
                 ])));
                 ctx.out.init.push(CodeBlock::Bracket {
                     repeat: true,
