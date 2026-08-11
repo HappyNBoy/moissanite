@@ -1,3 +1,4 @@
+use num_enum::IntoPrimitive;
 use serde::{Serialize, Serializer};
 
 pub struct Output {
@@ -122,6 +123,8 @@ pub enum ItemData {
         #[serde(rename = "type")]
         param_type: ParameterType,
     },
+    #[serde(rename = "bl_tag")]
+    Tag(Tag),
 }
 
 #[derive(Serialize, Copy, Clone)]
@@ -140,4 +143,37 @@ pub enum VarScope {
     Global,
     Local,
     Line,
+}
+
+#[derive(Serialize)]
+struct TagInner {
+    action: &'static str,
+    block: &'static str,
+    option: &'static str,
+    tag: &'static str
+}
+
+#[derive(Copy, Clone, IntoPrimitive)]
+#[repr(usize)]
+pub enum Tag {
+    BitwiseTrue = 0,
+    BitwiseRightShift = 1
+}
+
+macro_rules! tags {
+    [$($tag:tt)*] => {
+        [$(
+           TagInner $tag,
+        )*]
+    };
+}
+static TAGS: [TagInner; 2] = tags![
+    { action: "Bitwise",    block: "set_var",    option: "64-bit",    tag: "Bit Precision" }
+    { action: "Bitwise",    block: "set_var",    option: ">>>",       tag: "Operator" }
+];
+
+impl Serialize for Tag {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        Serialize::serialize(&TAGS[usize::from(*self)], serializer)
+    }
 }
