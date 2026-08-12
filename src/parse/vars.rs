@@ -145,9 +145,21 @@ pub enum Variable {
     I32ShrU(Box<[Variable; 2]>),
 }
 
-impl From<TrueVariable> for ItemData {
-    fn from(value: TrueVariable) -> Self {
-        match value {
+impl TrueVariable {
+    /// If you want to free the register, use `FnState.true_code` instead.
+    fn to_code(self, f: &mut String) {
+        // this allocates a String unnecessarily, but I don't really care atm
+        // if perf is an issue then change to manual format calls
+        write!(f, "%var({})", match self {
+            TrueVariable::Register(x) => names::register(x),
+            TrueVariable::Local(x) => names::local(x),
+            TrueVariable::Global(x) => names::global(x),
+        }).expect("String shouldn't error on write");
+    }
+
+    /// If you want to free the register, use `FnState.true_item` instead.
+    fn to_item(self) -> ItemData {
+        match self {
             TrueVariable::Register(x) => ItemData::Variable {
                 name: names::register(x),
                 scope: VarScope::Line
@@ -161,18 +173,6 @@ impl From<TrueVariable> for ItemData {
                 scope: VarScope::Global
             },
         }
-    }
-}
-
-impl TrueVariable {
-    fn to_code(&self, f: &mut String) {
-        // this allocates a String unnecessarily, but I don't really care atm
-        // if perf is an issue then change to manual format calls
-        write!(f, "%var({})", match *self {
-            TrueVariable::Register(x) => names::register(x),
-            TrueVariable::Local(x) => names::local(x),
-            TrueVariable::Global(x) => names::global(x),
-        }).expect("String shouldn't error on write");
     }
 }
 
@@ -200,6 +200,20 @@ impl FnState {
         self.line
     }
 
+    fn true_code(&mut self, f: &mut String, var: TrueVariable) {
+        if let TrueVariable::Register(x) = var {
+            self.regs.free_reg(x);
+        }
+        var.to_code(f);
+    }
+
+    fn true_item(&mut self, var: TrueVariable) -> ItemData {
+        if let TrueVariable::Register(x) = var {
+            self.regs.free_reg(x);
+        }
+        var.to_item()
+    }
+
     /// Creates a Name that evaluates to the variable by using DF percent codes.
     fn var_code(&mut self, f: &mut String, var: &Variable) {
         macro_rules! p {
@@ -209,17 +223,20 @@ impl FnState {
             }};
         }
         match var {
-            &Variable::TrueVariable(x) => x.to_code(f),
+            &Variable::TrueVariable(x) => self.true_code(f, x),
             Variable::Addition(v) => p!("%math($0+$1)", &**v),
             #[allow(unreachable_patterns)] // future instruction implementations might use it
-            other => self.cache(other).to_code(f)
+            other => {
+                let cached = self.cache(other);
+                self.true_code(f, cached);
+            }
         }
     }
 
     /// Creates a DF item that evaluates to the variable.
     pub fn make_item(&mut self, var: &Variable) -> ItemData {
         if let &Variable::TrueVariable(x) = var {
-            x.into()
+            self.true_item(x)
         } else {
             let mut value = String::new();
             self.var_code(&mut value, var);
@@ -234,36 +251,45 @@ impl FnState {
         if let Variable::TrueVariable(x) = var {
             *x
         } else {
-            let reg = TrueVariable::Register(self.regs.alloc_reg());
-            self.assign(reg, var);
-            reg
+            let mut reg = 0; // placeholder
+            self.assign_inner(|this| {
+                reg = this.regs.alloc_reg();
+                TrueVariable::Register(reg).to_item()
+            }, var);
+            TrueVariable::Register(reg)
         }
     }
 
     /// Assigns the value of a variable to a true variable.
     pub fn assign(&mut self, dest: TrueVariable, src: &Variable) {
         match src {
+            &Variable::TrueVariable(x) if x == dest => {},
+            src => self.assign_inner(|_| dest.to_item(), src)
+        }
+    }
+
+    fn assign_inner(&mut self, mut dest: impl FnMut(&mut Self) -> ItemData, src: &Variable) {
+        match src {
             &Variable::TrueVariable(src) => {
-                if dest != src {
-                    self.line.push(var_block(VarAction::Set, chest_args(vec![
-                        ChestSlot { slot: 0, item: dest.into() },
-                        ChestSlot { slot: 1, item: src.into() },
-                    ])));
-                }
+                let args = chest_args(vec![
+                    ChestSlot { slot: 0, item: dest(self) },
+                    ChestSlot { slot: 1, item: self.true_item(src) },
+                ]);
+                self.line.push(var_block(VarAction::Set, args));
             },
             Variable::Addition(v) => {
                 let args = chest_args(vec![
-                    ChestSlot { slot: 0, item: dest.into() },
                     ChestSlot { slot: 1, item: self.make_item(&v[0]) },
                     ChestSlot { slot: 2, item: self.make_item(&v[1]) },
+                    ChestSlot { slot: 0, item: dest(self) },
                 ]);
                 self.line.push(var_block(VarAction::Sum, args));
             },
             Variable::I32ShrU(v) => {
                 let args = chest_args(vec![
-                    ChestSlot { slot: 0,  item: dest.into() },
                     ChestSlot { slot: 1,  item: self.make_item(&v[0]) },
                     ChestSlot { slot: 2,  item: self.make_item(&v[1]) },
+                    ChestSlot { slot: 0,  item: dest(self) },
                     ChestSlot { slot: 25, item: ItemData::Tag(Tag::BitwiseTrue) },
                     ChestSlot { slot: 26, item: ItemData::Tag(Tag::BitwiseShrU) },
                 ]);
