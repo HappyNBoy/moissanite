@@ -3,86 +3,6 @@ use crate::output::structs::Tag;
 use crate::types::ValueType;
 use std::fmt::Write;
 
-pub struct RegisterManager {
-    free_regs: Vec<u32>,
-    reg_count: u32,
-}
-
-impl RegisterManager {
-    pub fn alloc_reg(&mut self) -> u32 {
-        match self.free_regs.pop() {
-            Some(reg) => reg,
-            None => {
-                let out = self.reg_count;
-                self.reg_count += 1;
-                out
-            }
-        }
-    }
-
-    pub fn free_reg(&mut self, reg: u32) {
-        debug_assert!(!self.free_regs.contains(&reg));
-        self.free_regs.push(reg);
-    }
-}
-
-pub struct StackEntry {
-    pub value: Variable,
-    pub kind: ValueType,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum TrueVariable {
-    Register(u32),
-    Local(u32),
-    Global(u32),
-}
-
-#[derive(Debug, Clone)]
-pub enum Variable {
-    TrueVariable(TrueVariable),
-    Addition(Box<[Variable; 2]>),
-    I32ShrU(Box<[Variable; 2]>),
-}
-
-impl From<TrueVariable> for ItemData {
-    fn from(value: TrueVariable) -> Self {
-        match value {
-            TrueVariable::Register(x) => ItemData::Variable {
-                name: names::register(x),
-                scope: VarScope::Line
-            },
-            TrueVariable::Local(x) => ItemData::Variable {
-                name: names::local(x),
-                scope: VarScope::Line
-            },
-            TrueVariable::Global(x) => ItemData::Variable {
-                name: names::global(x),
-                scope: VarScope::Global
-            },
-        }
-    }
-}
-
-impl TrueVariable {
-    fn to_code(&self, f: &mut String) {
-        // this allocates a String unnecessarily, but I don't really care atm
-        // if perf is an issue then change to manual format calls
-        write!(f, "%var({})", match *self {
-            TrueVariable::Register(x) => names::register(x),
-            TrueVariable::Local(x) => names::local(x),
-            TrueVariable::Global(x) => names::global(x),
-        }).expect("String shouldn't error on write");
-    }
-}
-
-pub struct FnState {
-    pub line: OutputLine,
-    pub regs: RegisterManager,
-    pub stack: Vec<StackEntry>,
-    pub locals: Vec<ValueType>
-}
-
 #[macro_use]
 mod codegen {
     use super::{FnState, Variable};
@@ -183,6 +103,86 @@ mod codegen {
     }
 }
 
+pub struct RegisterManager {
+    free_regs: Vec<u32>,
+    reg_count: u32,
+}
+
+impl RegisterManager {
+    pub fn alloc_reg(&mut self) -> u32 {
+        match self.free_regs.pop() {
+            Some(reg) => reg,
+            None => {
+                let out = self.reg_count;
+                self.reg_count += 1;
+                out
+            }
+        }
+    }
+
+    pub fn free_reg(&mut self, reg: u32) {
+        debug_assert!(!self.free_regs.contains(&reg));
+        self.free_regs.push(reg);
+    }
+}
+
+pub struct StackEntry {
+    pub value: Variable,
+    pub kind: ValueType,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum TrueVariable {
+    Register(u32),
+    Local(u32),
+    Global(u32),
+}
+
+#[derive(Debug, Clone)]
+pub enum Variable {
+    TrueVariable(TrueVariable),
+    Addition(Box<[Variable; 2]>),
+    I32ShrU(Box<[Variable; 2]>),
+}
+
+impl From<TrueVariable> for ItemData {
+    fn from(value: TrueVariable) -> Self {
+        match value {
+            TrueVariable::Register(x) => ItemData::Variable {
+                name: names::register(x),
+                scope: VarScope::Line
+            },
+            TrueVariable::Local(x) => ItemData::Variable {
+                name: names::local(x),
+                scope: VarScope::Line
+            },
+            TrueVariable::Global(x) => ItemData::Variable {
+                name: names::global(x),
+                scope: VarScope::Global
+            },
+        }
+    }
+}
+
+impl TrueVariable {
+    fn to_code(&self, f: &mut String) {
+        // this allocates a String unnecessarily, but I don't really care atm
+        // if perf is an issue then change to manual format calls
+        write!(f, "%var({})", match *self {
+            TrueVariable::Register(x) => names::register(x),
+            TrueVariable::Local(x) => names::local(x),
+            TrueVariable::Global(x) => names::global(x),
+        }).expect("String shouldn't error on write");
+    }
+}
+
+pub struct FnState {
+    pub line: OutputLine,
+    pub regs: RegisterManager,
+    pub stack: Vec<StackEntry>,
+    pub locals: Vec<ValueType>
+}
+
 impl FnState {
     pub const fn new(line: OutputLine, locals: Vec<ValueType>) -> Self {
         Self {
@@ -264,8 +264,8 @@ impl FnState {
                     ChestSlot { slot: 0,  item: dest.into() },
                     ChestSlot { slot: 1,  item: self.make_item(&v[0]) },
                     ChestSlot { slot: 2,  item: self.make_item(&v[1]) },
-                    ChestSlot { slot: 25, item: ItemData::Tag(Tag::BitwiseTrue)  },
-                    ChestSlot { slot: 26, item: ItemData::Tag(Tag::BitwiseShrU)  },
+                    ChestSlot { slot: 25, item: ItemData::Tag(Tag::BitwiseTrue) },
+                    ChestSlot { slot: 26, item: ItemData::Tag(Tag::BitwiseShrU) },
                 ]);
                 self.line.push(var_block(VarAction::Bitwise, args));
             }
