@@ -79,14 +79,6 @@ mod codegen {
         }
     }
 
-    macro_rules! unroll_args {
-        ($args:expr, $f:expr, $state:expr, $vars:expr, [$($i:literal),*]) => {
-            $(
-                codegen::fmt_inner($f, $state, $args, $i, $vars);
-            )*
-        }
-    }
-
     macro_rules! fmt_var {
         ($f:expr, $state:expr, $template:literal, $vars:expr) => {
             const ARG_LEN: usize = codegen::arg_len($template);
@@ -96,9 +88,9 @@ mod codegen {
                 codegen::make_args($template, &mut arr);
                 arr
             };
-            unroll_args!(ARGS, $f, $state, $vars,
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-             17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
+            seq_macro::seq!(I in 0..32 {
+                codegen::fmt_inner($f, $state, ARGS, I, $vars);
+            });
         };
     }
 }
@@ -269,6 +261,30 @@ impl FnState {
     }
 
     fn assign_inner(&mut self, mut dest: impl FnMut(&mut Self) -> ItemData, src: &Variable) {
+        macro_rules! args {
+            ($vars:expr $(,$tag:ident)*) => {{
+                const TAGS_LEN: usize = <[&str]>::len(&[$(stringify!($tag)),*]);
+                let mut vec = Vec::with_capacity($vars.len() + 1 + TAGS_LEN);
+                // this should unroll, if it doesn't and causes issues
+                // then replace with `seq!` and pass an integer literal
+                for i in 0..$vars.len() {
+                    vec.push(ChestSlot { slot: (i + 1) as u32, item: self.make_item(&$vars[i]) });
+                }
+                vec.push(ChestSlot { slot: 0, item: dest(self) });
+                #[allow(unused)]
+                let mut i = 26 - (TAGS_LEN as u32);
+                $(
+                    vec.push(ChestSlot { slot: { i += 1; i }, item: ItemData::Tag(Tag::$tag) });
+                )*
+                chest_args(vec)
+            }};
+        }
+        macro_rules! vb {
+            ($vars:expr, $action:ident $(,$tag:ident)*) => {{
+                let args = args!($vars $(,$tag)*);
+                self.line.push(var_block(VarAction::$action, args));
+            }};
+        }
         match src {
             &Variable::TrueVariable(src) => {
                 let args = chest_args(vec![
@@ -277,24 +293,8 @@ impl FnState {
                 ]);
                 self.line.push(var_block(VarAction::Set, args));
             },
-            Variable::Addition(v) => {
-                let args = chest_args(vec![
-                    ChestSlot { slot: 1, item: self.make_item(&v[0]) },
-                    ChestSlot { slot: 2, item: self.make_item(&v[1]) },
-                    ChestSlot { slot: 0, item: dest(self) },
-                ]);
-                self.line.push(var_block(VarAction::Sum, args));
-            },
-            Variable::I32ShrU(v) => {
-                let args = chest_args(vec![
-                    ChestSlot { slot: 1,  item: self.make_item(&v[0]) },
-                    ChestSlot { slot: 2,  item: self.make_item(&v[1]) },
-                    ChestSlot { slot: 0,  item: dest(self) },
-                    ChestSlot { slot: 25, item: ItemData::Tag(Tag::BitwiseTrue) },
-                    ChestSlot { slot: 26, item: ItemData::Tag(Tag::BitwiseShrU) },
-                ]);
-                self.line.push(var_block(VarAction::Bitwise, args));
-            }
+            Variable::Addition(v) => vb!(v, Sum),
+            Variable::I32ShrU(v) => vb!(v, Bitwise, BitwiseTrue, BitwiseShrU),
         }
     }
 }
