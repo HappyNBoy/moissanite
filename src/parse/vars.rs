@@ -2,101 +2,11 @@ use crate::output::{chest_args, names, var_block, ChestSlot, ItemData, OutputLin
 use crate::output::structs::Tag;
 use crate::types::ValueType;
 use std::fmt::Write;
-
-#[macro_use]
-mod codegen {
-    use super::{FnState, Variable};
-
-    pub(super) enum Argument {
-        String(&'static str),
-        Variable(usize),
-    }
-
-    pub(super) const fn arg_len(template: &str) -> usize {
-        let bytes = template.as_bytes();
-        let mut i: usize = 0;
-        let mut start: usize = 0;
-        let mut out: usize = 1;
-        while i < bytes.len() {
-            if bytes[i] == b'$' {
-                if start != i {
-                    out += 1;
-                }
-                out += 1;
-                start = i + 1;
-            }
-            i += 1;
-        }
-        out
-    }
-
-    const fn const_slice(s: &str, start: usize, end: usize) -> &str {
-        assert!(start <= end && end <= s.len());
-        unsafe {
-            let ptr = s.as_ptr().add(start);
-            let len = end - start;
-            let bytes = std::slice::from_raw_parts(ptr, len);
-            match std::str::from_utf8(bytes) {
-                Ok(x) => x,
-                Err(_) => panic!("expected valid utf-8")
-            }
-        }
-    }
-
-    pub(super) const fn make_args(template: &'static str, args: &mut [Argument]) {
-        let bytes = template.as_bytes();
-        let mut args_at: usize = 0;
-        let mut i: usize = 0;
-        let mut start: usize = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'$' {
-                if start < i {
-                    args[args_at] = Argument::String(const_slice(template, start, i));
-                    args_at += 1;
-                }
-                i += 1;
-                assert!(i < bytes.len());
-                let var = bytes[i];
-                assert!(b'0' <= var && var <= b'9');
-                args[args_at] = Argument::Variable((var - b'0') as usize);
-                args_at += 1;
-                start = i + 1;
-            }
-            i += 1;
-        }
-        if start < i {
-            args[args_at] = Argument::String(const_slice(template, start, i));
-        }
-    }
-
-    #[inline(always)]
-    pub(super) fn fmt_inner<const N: usize>(f: &mut String, state: &mut FnState, args: [Argument; N], i: usize, vars: &[Variable]) {
-        if i < N {
-            match args[i] {
-                Argument::String(s) => f.push_str(s),
-                Argument::Variable(var) => state.var_code(f, &vars[var])
-            }
-        }
-    }
-
-    macro_rules! fmt_var {
-        ($f:expr, $state:expr, $template:literal, $vars:expr) => {
-            const ARG_LEN: usize = codegen::arg_len($template);
-            const { assert!(ARG_LEN <= 32); }
-            const ARGS: [codegen::Argument; ARG_LEN] = {
-                let mut arr = [const { codegen::Argument::Variable(0) }; ARG_LEN];
-                codegen::make_args($template, &mut arr);
-                arr
-            };
-            seq_macro::seq!(I in 0..32 {
-                codegen::fmt_inner($f, $state, ARGS, I, $vars);
-            });
-        };
-    }
-}
+use moissanite_macros::define_vars;
 
 pub struct RegisterManager {
     free_regs: Vec<u32>,
+    pending_frees: Vec<u32>,
     reg_count: u32,
 }
 
@@ -116,6 +26,23 @@ impl RegisterManager {
         debug_assert!(!self.free_regs.contains(&reg));
         self.free_regs.push(reg);
     }
+
+    pub fn mark_frees(&self) -> usize {
+        self.pending_frees.len()
+    }
+
+    pub fn schedule_free(&mut self, reg: u32) {
+        debug_assert!(!self.free_regs.contains(&reg));
+        debug_assert!(!self.pending_frees.contains(&reg));
+        self.pending_frees.push(reg);
+    }
+
+    pub fn flush_frees(&mut self, mark: usize) {
+        while self.pending_frees.len() > mark {
+            let reg = self.pending_frees.pop().unwrap();
+            self.free_reg(reg);
+        }
+    }
 }
 
 pub struct StackEntry {
@@ -128,13 +55,6 @@ pub enum TrueVariable {
     Register(u32),
     Local(u32),
     Global(u32),
-}
-
-#[derive(Debug, Clone)]
-pub enum Variable {
-    TrueVariable(TrueVariable),
-    Addition(Box<[Variable; 2]>),
-    I32ShrU(Box<[Variable; 2]>),
 }
 
 impl TrueVariable {
@@ -182,6 +102,7 @@ impl FnState {
             locals,
             regs: RegisterManager {
                 free_regs: Vec::new(),
+                pending_frees: Vec::new(),
                 reg_count: 0,
             },
             stack: Vec::new(),
@@ -194,35 +115,16 @@ impl FnState {
 
     fn true_code(&mut self, f: &mut String, var: TrueVariable) {
         if let TrueVariable::Register(x) = var {
-            self.regs.free_reg(x);
+            self.regs.schedule_free(x);
         }
         var.to_code(f);
     }
 
     fn true_item(&mut self, var: TrueVariable) -> ItemData {
         if let TrueVariable::Register(x) = var {
-            self.regs.free_reg(x);
+            self.regs.schedule_free(x);
         }
         var.to_item()
-    }
-
-    /// Creates a Name that evaluates to the variable by using DF percent codes.
-    fn var_code(&mut self, f: &mut String, var: &Variable) {
-        macro_rules! p {
-            ($template:literal, $vars:expr) => {{
-                let vars = $vars;
-                fmt_var!(f, self, $template, vars);
-            }};
-        }
-        match var {
-            &Variable::TrueVariable(x) => self.true_code(f, x),
-            Variable::Addition(v) => p!("%math($0+$1)", &**v),
-            #[allow(unreachable_patterns)] // future instruction implementations might use it
-            other => {
-                let cached = self.cache(other);
-                self.true_code(f, cached);
-            }
-        }
     }
 
     /// Creates a DF item that evaluates to the variable.
@@ -259,42 +161,159 @@ impl FnState {
             src => self.assign_inner(|_| dest.to_item(), src)
         }
     }
+}
 
-    fn assign_inner(&mut self, mut dest: impl FnMut(&mut Self) -> ItemData, src: &Variable) {
-        macro_rules! args {
-            ($vars:expr $(,$tag:ident)*) => {{
-                const TAGS_LEN: usize = <[&str]>::len(&[$(stringify!($tag)),*]);
-                let mut vec = Vec::with_capacity($vars.len() + 1 + TAGS_LEN);
-                // this should unroll, if it doesn't and causes issues
-                // then replace with `seq!` and pass an integer literal
-                for i in 0..$vars.len() {
-                    vec.push(ChestSlot { slot: (i + 1) as u32, item: self.make_item(&$vars[i]) });
-                }
-                vec.push(ChestSlot { slot: 0, item: dest(self) });
-                #[allow(unused)]
-                let mut i = 26 - (TAGS_LEN as u32);
-                $(
-                    vec.push(ChestSlot { slot: { i += 1; i }, item: ItemData::Tag(Tag::$tag) });
-                )*
-                chest_args(vec)
-            }};
-        }
-        macro_rules! vb {
-            ($vars:expr, $action:ident $(,$tag:ident)*) => {{
-                let args = args!($vars $(,$tag)*);
-                self.line.push(var_block(VarAction::$action, args));
-            }};
-        }
-        match src {
-            &Variable::TrueVariable(src) => {
-                let args = chest_args(vec![
-                    ChestSlot { slot: 0, item: dest(self) },
-                    ChestSlot { slot: 1, item: self.true_item(src) },
-                ]);
-                self.line.push(var_block(VarAction::Set, args));
-            },
-            Variable::Addition(v) => vb!(v, Sum),
-            Variable::I32ShrU(v) => vb!(v, Bitwise, BitwiseTrue, BitwiseShrU),
-        }
+define_vars! {
+    Addition(2) => {
+        Sum($0, $1);
+        "%math($0+$1)"
+    },
+    I32ShrU(2) => Bitwise($0, $1) [BitwiseTrue, BitwiseShrU],
+
+    #[cfg(test)]
+    TestSub(2) => "%math($0-$1)",
+
+    #[cfg(test)]
+    TestRotl32(2) => {
+        #0 = Bitwise($0, "%math($1%32)") [BitwiseTrue, BitwiseShrU];
+        #1 = Bitwise($0, "%math(32-($1%32))") [BitwiseTrue, BitwiseShrU];
+        Sum(#0, #1)
+    },
+
+    #[cfg(test)]
+    TestShiftThenAdd(2) => {
+        #0 = Bitwise($0, $1) [BitwiseTrue, BitwiseShrU];
+        "%math(#0+$0)"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::output::structs::CodeBlock;
+    use crate::output::structs::CodeBlockInner;
+
+    #[test]
+    fn test_dual_mode_add_assign_vs_var_code() {
+        // Direct assign of Addition should emit a single `VarAction::Sum` block
+        let mut state = FnState::new(OutputLine::new(), vec![ValueType::I32, ValueType::I32]);
+        let expr = Variable::Addition(Box::new([
+            Variable::TrueVariable(TrueVariable::Local(0)),
+            Variable::TrueVariable(TrueVariable::Local(1)),
+        ]));
+        state.assign(TrueVariable::Register(0), &expr);
+        assert_eq!(state.line.blocks.len(), 1);
+        let CodeBlock::Block(CodeBlockInner::SetVariable { action, args }) = &state.line.blocks[0] else {
+            panic!("expected SetVariable block");
+        };
+        assert!(*action == VarAction::Sum);
+        assert_eq!(args.items.len(), 3);
+
+        // Nested Addition inside another Addition should format using `%math(...)`
+        let mut state2 = FnState::new(OutputLine::new(), vec![ValueType::I32, ValueType::I32]);
+        let nested = Variable::Addition(Box::new([
+            expr,
+            Variable::TrueVariable(TrueVariable::Local(0)),
+        ]));
+        let item = state2.make_item(&nested);
+        assert!(state2.line.blocks.is_empty());
+        let ItemData::Number { value } = item else {
+            panic!("expected Number item");
+        };
+        assert_eq!(value, "%math(%math(%var(_ml_0)+%var(_ml_1))+%var(_ml_0))");
+    }
+
+    #[test]
+    fn test_sibling_operands_do_not_clobber_registers() {
+        // Addition(I32ShrU(l0, l1), I32ShrU(l0, l1))
+        // The first I32ShrU allocates _mr_0; the second I32ShrU must allocate _mr_1 (not clobber _mr_0!),
+        // and then when assigned to a destination, both _mr_0 and _mr_1 are freed before dest is allocated.
+        let mut state = FnState::new(OutputLine::new(), vec![ValueType::I32, ValueType::I32]);
+        let shr1 = Variable::I32ShrU(Box::new([
+            Variable::TrueVariable(TrueVariable::Local(0)),
+            Variable::TrueVariable(TrueVariable::Local(1)),
+        ]));
+        let shr2 = Variable::I32ShrU(Box::new([
+            Variable::TrueVariable(TrueVariable::Local(0)),
+            Variable::TrueVariable(TrueVariable::Local(1)),
+        ]));
+        let sum = Variable::Addition(Box::new([shr1, shr2]));
+        state.assign(TrueVariable::Local(0), &sum);
+
+        // Should have 3 blocks: _mr_0 = l0 >>> l1, _mr_1 = l0 >>> l1, _ml_0 = _mr_0 + _mr_1
+        assert_eq!(state.line.blocks.len(), 3);
+        let CodeBlock::Block(CodeBlockInner::SetVariable { action, args }) = &state.line.blocks[2] else {
+            panic!("expected SetVariable");
+        };
+        assert!(*action == VarAction::Sum);
+        let ItemData::Number { value: v1 } = &args.items[0].item else { panic!() };
+        let ItemData::Number { value: v2 } = &args.items[1].item else { panic!() };
+        assert_eq!(v1, "%var(_mr_0)");
+        assert_eq!(v2, "%var(_mr_1)");
+        // Both _mr_0 and _mr_1 must now be free!
+        assert_eq!(state.regs.reg_count, 2);
+        assert_eq!(state.regs.free_regs.len(), 2);
+        assert!(state.regs.pending_frees.is_empty());
+    }
+
+    #[test]
+    fn test_multi_block_caching_and_temp_registers() {
+        let mut state = FnState::new(OutputLine::new(), vec![ValueType::I32, ValueType::I32]);
+
+        // Pass a compound expression as $0 to TestRotl32 so it must be cached once into a register
+        let compound_arg0 = Variable::TestSub(Box::new([
+            Variable::TrueVariable(TrueVariable::Local(0)),
+            Variable::TrueVariable(TrueVariable::Local(1)),
+        ]));
+        let rotl = Variable::TestRotl32(Box::new([
+            compound_arg0,
+            Variable::TrueVariable(TrueVariable::Local(1)),
+        ]));
+
+        state.assign(TrueVariable::Local(0), &rotl);
+
+        // Expected blocks:
+        // 1. Cache $0: _mr_0 = %math(_ml_0 - _ml_1) (VarAction::Set)
+        // 2. #0: _mr_1 = Bitwise(_mr_0, "%math(%var(_ml_1)%32)")
+        // 3. #1: _mr_0 = Bitwise(_mr_0, "%math(32-(%var(_ml_1)%32))") (reuses _mr_0 since $0 is freed after #1's inputs!)
+        // 4. Final: _ml_0 = Sum(#0 (_mr_1), #1 (_mr_0))
+        assert_eq!(state.line.blocks.len(), 4);
+        // Only 2 physical registers needed in total, and all registers freed at the end!
+        assert_eq!(state.regs.reg_count, 2);
+        assert_eq!(state.regs.free_regs.len(), 2);
+        assert!(state.regs.pending_frees.is_empty());
+    }
+
+    #[test]
+    fn test_setup_blocks_with_var_code() {
+        let mut state = FnState::new(OutputLine::new(), vec![ValueType::I32, ValueType::I32]);
+
+        // TestShiftThenAdd nested inside TestSub
+        let inner = Variable::TestShiftThenAdd(Box::new([
+            Variable::TrueVariable(TrueVariable::Local(0)),
+            Variable::TrueVariable(TrueVariable::Local(1)),
+        ]));
+        let outer = Variable::TestSub(Box::new([
+            inner,
+            Variable::TrueVariable(TrueVariable::Local(1)),
+        ]));
+
+        state.assign(TrueVariable::Local(0), &outer);
+
+        // Expected blocks:
+        // 1. Setup block from TestShiftThenAdd: _mr_0 = Bitwise(_ml_0, _ml_1)
+        // 2. Final Set block from TestSub: _ml_0 = %math(%math(%var(_mr_0)+%var(_ml_0))-%var(_ml_1))
+        assert_eq!(state.line.blocks.len(), 2);
+        let CodeBlock::Block(CodeBlockInner::SetVariable { action, args }) = &state.line.blocks[1] else {
+            panic!("expected SetVariable");
+        };
+        assert!(*action == VarAction::Set);
+        let ItemData::Number { value } = &args.items[1].item else {
+            panic!("expected Number item in slot 1");
+        };
+        assert_eq!(value, "%math(%math(%var(_mr_0)+%var(_ml_0))-%var(_ml_1))");
+        assert_eq!(state.regs.reg_count, 1);
+        assert_eq!(state.regs.free_regs.len(), 1);
+        assert!(state.regs.pending_frees.is_empty());
     }
 }

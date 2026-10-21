@@ -1,4 +1,3 @@
-use num_enum::IntoPrimitive;
 use serde::{Serialize, Serializer};
 
 pub struct Output {
@@ -92,7 +91,7 @@ pub struct ChestArgs {
 }
 
 impl ChestArgs {
-    pub(crate) const fn empty() -> ChestArgs {
+    pub const fn empty() -> ChestArgs {
         ChestArgs { items: Vec::new() }
     }
 }
@@ -154,27 +153,34 @@ struct TagInner {
     tag: &'static str
 }
 
-#[derive(Copy, Clone, IntoPrimitive)]
-#[repr(usize)]
-pub enum Tag {
-    BitwiseTrue = 0,
-    BitwiseShrU = 1
-}
+macro_rules! define_tags {
+    ($($variant:ident => { action: $action:literal, block: $block:literal, tag: $tag:literal, option: $option:literal }),* $(,)?) => {
+        #[derive(Copy, Clone)]
+        #[repr(usize)]
+        pub enum Tag {
+            $($variant,)*
+        }
 
-macro_rules! tags {
-    [$($tag:tt)*] => {
-        [$(
-           TagInner $tag,
-        )*]
+        static TAGS: &[TagInner] = &[
+            $(
+                TagInner {
+                    action: $action,
+                    block: $block,
+                    option: $option,
+                    tag: $tag,
+                },
+            )*
+        ];
     };
 }
-static TAGS: [TagInner; 2] = tags![
-    { action: "Bitwise",    block: "set_var",    option: "64-bit",    tag: "Bit Precision" }
-    { action: "Bitwise",    block: "set_var",    option: ">>>",       tag: "Operator" }
-];
+
+define_tags! {
+    BitwiseTrue => { action: "Bitwise", block: "set_var", tag: "Bit Precision", option: "64-bit" },
+    BitwiseShrU => { action: "Bitwise", block: "set_var", tag: "Operator",      option: ">>>" },
+}
 
 impl Serialize for Tag {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        Serialize::serialize(&TAGS[usize::from(*self)], serializer)
+        Serialize::serialize(&TAGS[*self as usize], serializer)
     }
 }
